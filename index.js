@@ -3,6 +3,8 @@ import { createInterface } from "readline"
 import os from "os"
 import fs from "fs/promises"
 import { createReadStream, createWriteStream } from "fs";
+import { createHash } from "crypto";
+import { pipeline } from "stream/promises";
 
 
 class FileManager {
@@ -86,6 +88,7 @@ class FileManager {
                     await this.moveFile(targetPath, destPath)
                     break;
                 case 'rm':
+                    await this.deleteFile(targetPath)
                     break;
                 case 'os --EOL':
                     break;
@@ -97,7 +100,8 @@ class FileManager {
                     break;
                 case 'os --architecture':
                     break;
-                case 'hash path_to_file':
+                case 'hash':
+                    await this.calcHash(targetPath)
                     break;
                 case 'compress path_to_file path_to_destination':
                     break;
@@ -172,7 +176,7 @@ class FileManager {
         try {
             const sourceFileName = path.join(this.currentPath, source)
             const destFileName = path.join(this.currentPath, dest)
-            const isSourceFile = (await fs.stat(sourceFileName)).isFile()
+            const isSourceFile = await this._isExistsFile(sourceFileName)
             let destExists = false;
             try {
                 await fs.access(destFileName);
@@ -193,6 +197,42 @@ class FileManager {
             await this._copyWithStreams(sourceFileName, destFileName)
             await fs.unlink(sourceFileName)
             console.log('Original file deleted');
+        } catch (error) {
+            console.error(error.message)
+        }
+    }
+
+    async calcHash(filename) {
+        try {
+            const fullFileName = path.join(this.currentPath, filename)
+            const isExists = this._isExistsFile(fullFileName)
+            if (isExists) {
+                const hash = createHash('sha256')
+                const readStream = createReadStream(fullFileName)
+                await pipeline(readStream, hash)
+                const hexHash = hash.digest('hex')
+                console.log(hexHash)
+            }
+        } catch (error) {
+            console.log('Error: ')
+        }
+    }
+
+    async _isExistsFile(filename) {
+        try {
+            return (await fs.stat(filename)).isFile()
+        } catch (error) {
+            return false
+        }
+    }
+
+    async deleteFile(filename) {
+        try {
+            const isFile = await this._isExistsFile(path.join(this.currentPath, filename))
+            if (isFile)
+                await fs.unlink(path.join(this.currentPath, filename))
+            else
+                throw new Error('The file was not found');
         } catch (error) {
             console.error(error.message)
         }
