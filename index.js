@@ -2,8 +2,7 @@ import path from "path";
 import { createInterface } from "readline"
 import os from "os"
 import fs from "fs/promises"
-import { createReadStream } from "fs";
-import { rejects } from "assert";
+import { createReadStream, createWriteStream } from "fs";
 
 
 class FileManager {
@@ -41,7 +40,8 @@ class FileManager {
     async parseCommand(command) {
         try {
             const [cmd, ...args] = command.trim().split(' ');
-            const targetPath = args.join(' ');
+            const targetPath = args[0]; // join(' ')
+            const destPath = args[1];
 
             switch (cmd) {
                 case '.exit':
@@ -74,12 +74,16 @@ class FileManager {
                     await this.createFile(targetPath)
                     break;
                 case 'mkdir':
+                    await this.createDir(targetPath)
                     break;
                 case 'rn':
+                    await this.renameFile(targetPath, destPath)
                     break;
                 case 'cp':
+                    await this.copyFile(targetPath, destPath)
                     break;
                 case 'mv':
+                    await this.moveFile(targetPath, destPath)
                     break;
                 case 'rm':
                     break;
@@ -150,6 +154,141 @@ class FileManager {
         }
     }
 
+    async createDir(dirname) {
+        try {
+            await fs.mkdir(path.join(this.currentPath, dirname))
+            console.log(path.join(this.currentPath, dirname))
+            console.log('Directory was created successfully')
+        } catch (error) {
+            if (error.code === 'EPERM') {
+                console.error(error.message)
+                return
+            }
+            console.error('Directory was not created')
+        }
+    }
+
+    async moveFile(source, dest) {
+        try {
+            const sourceFileName = path.join(this.currentPath, source)
+            const destFileName = path.join(this.currentPath, dest)
+            const isSourceFile = (await fs.stat(sourceFileName)).isFile()
+            let destExists = false;
+            try {
+                await fs.access(destFileName);
+                destExists = true;
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+            }
+
+            if (!isSourceFile) {
+                console.error('Error: Source is not a file');
+                return;
+            }
+
+            if (destExists) {
+                console.error('Error: File "' + dest + '" already exists in this folder');
+                return;
+            }
+            await this._copyWithStreams(sourceFileName, destFileName)
+            await fs.unlink(sourceFileName)
+            console.log('Original file deleted');
+        } catch (error) {
+            console.error(error.message)
+        }
+    }
+
+    /* async _copyWithStreams(sourceFileName, destFileName) {
+    try {
+        const readStream = createReadStream(sourceFileName);
+        const writeStream = createWriteStream(destFileName);
+        
+        await pipeline(readStream, writeStream);
+        console.log('File copied successfully');
+        
+    } catch (err) {
+        console.error(err);
+        throw err;
+    }
+}*/
+
+    _copyWithStreams(sourceFileName, destFileName) {
+        return new Promise((resolve, reject) => {
+            const readStream = createReadStream(sourceFileName)
+            const writeStream = createWriteStream(destFileName)
+            readStream.pipe(writeStream)
+            readStream.on('error', (err) => {
+                console.error('Ошибка чтения:', err);
+                reject(err);
+            });
+
+            writeStream.on('error', (err) => {
+                console.error('Ошибка записи:', err);
+                reject(err);
+            });
+
+            writeStream.on('finish', () => {
+                console.log('File copied successfully');
+                resolve();
+            });
+        })
+    }
+
+    async copyFile(source, dest) {
+        try {
+            const sourceFileName = path.join(this.currentPath, source)
+            const destFileName = path.join(this.currentPath, dest)
+
+            const isSourceFile = (await fs.stat(sourceFileName)).isFile()
+
+            let destExists = false;
+            try {
+                await fs.access(destFileName);
+                destExists = true;
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+            }
+
+            if (!isSourceFile) {
+                console.error('Error: Source is not a file');
+                return;
+            }
+
+            if (destExists) {
+                console.error('Error: File "' + dest + '" already exists in this folder');
+                return;
+            }
+
+            await this._copyWithStreams(sourceFileName, destFileName)
+
+            // await fs.copyFile(sourceFileName, destFileName)
+            // console.log('File copied successfully');
+
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                console.error('Source file was not found')
+            } else {
+                console.error(error.message)
+            }
+        }
+    }
+
+    async renameFile(source, dest) {
+        try {
+            const sourcePath = path.join(this.currentPath, source);
+            await fs.access(sourcePath)
+            const isFile = (await fs.stat(sourcePath)).isFile()
+            if (isFile) {
+                await fs.rename(sourcePath, path.join(this.currentPath, dest))
+                console.log('The file was renamed successfully')
+                return
+            }
+            throw new Error('it is not file, plese enter source to file')
+        } catch (error) {
+            console.error(error.message)
+        }
+    }
+
     async catFile(pathToFile) {
         console.log(pathToFile)
         const stream = createReadStream(path.join(this.currentPath, pathToFile))
@@ -165,14 +304,6 @@ class FileManager {
         })
         console.log(data)
     }
-    // async catFile(pathToFile) {
-    //     try {
-    //         const fileContent = await readStreamAsPromise(path.join(this.currentPath, pathToFile))
-    //         console.log(fileContent)
-    //     } catch (error) {
-    //         console.error('Error reading file:', error);
-    //     }
-    // }
 
     async ls() {
         const objects = await fs.readdir(this.currentPath);
