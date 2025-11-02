@@ -5,6 +5,7 @@ import fs from "fs/promises"
 import { createReadStream, createWriteStream } from "fs";
 import { createHash } from "crypto";
 import { pipeline } from "stream/promises";
+import zlib from "zlib"
 
 
 class FileManager {
@@ -103,9 +104,11 @@ class FileManager {
                 case 'hash':
                     await this.calcHash(targetPath)
                     break;
-                case 'compress path_to_file path_to_destination':
+                case 'compress':
+                    await this.compress(targetPath, destPath)
                     break;
-                case 'decompress path_to_file path_to_destination':
+                case 'decompress':
+                    await this.decompress(targetPath, destPath)
                     break;
 
                 default:
@@ -459,6 +462,33 @@ class FileManager {
                 console.log(`Directory not found: ${targetPath}`);
             }
             this.showOperationFailed();
+        }
+    }
+
+    async compress(source, dest) {
+        try {
+            const sourceFullPath = path.join(this.currentPath, source)
+            const destFullPath = path.join(this.currentPath, dest)
+            const readStream = createReadStream(sourceFullPath)
+            const gzip = zlib.createGzip();
+            const writeStream = createWriteStream(destFullPath)
+            await pipeline(readStream, gzip, writeStream)
+            console.log('archive was created')
+        } catch (error) {
+            console.error(error.message)
+        }
+    }
+    async decompress(source, dest) {
+        try {
+            const sourceFullPath = path.join(this.currentPath, source)
+            const destFullPath = path.join(this.currentPath, dest)
+            const readStream = createReadStream(sourceFullPath)
+            const unzip = zlib.createGunzip();
+            const writeStream = createWriteStream(destFullPath)
+            await pipeline(readStream, unzip, writeStream)
+            console.log('archive was unzip')
+        } catch (error) {
+            console.error(error.message)
         }
     }
 
